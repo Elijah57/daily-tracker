@@ -6,3 +6,6 @@ client/dist/
 # Netlify local functions build artifacts
 netlify/functions/*.zip
 netlify/functions/manifest.json
+
+# Local Netlify folder
+.netlify

@@ -1,9 +1,22 @@
 import { route } from '../../server/src/lib/router.js';
 
-// Netlify function (single catch-all). Map /api/* to this via netlify.toml.
-// Netlify passes the full request path in event.path & event.rawUrl's query.
+// Normalize whatever path Netlify hands us back to /api/...
+function apiPath(pathname) {
+  // Strip a function-internal prefix if present.
+  let p = pathname.replace(/\/?\.netlify\/functions\/\w+/, '');
+  if (!p.startsWith('/api')) {
+    // Last resort: extract the segment that follows /api, or prepend it.
+    const idx = p.indexOf('/api');
+    if (idx >= 0) p = p.slice(idx);
+    else p = '/api' + p;
+  }
+  return p || '/api';
+}
+
 export default async function handler(event) {
   const url = new URL(event.rawUrl || event.path, 'http://localhost');
+  const clean = apiPath(url.pathname);
+  console.log('api fn path=', JSON.stringify(url.pathname), 'clean=', clean);
   let body = {};
   if (event.body) {
     try {
@@ -12,7 +25,6 @@ export default async function handler(event) {
       body = {};
     }
   }
-  const clean = url.pathname.replace(/\.netlify\/functions\/api/, 'api');
   const result = await route({
     method: event.httpMethod || 'GET',
     path: clean,
