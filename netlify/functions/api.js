@@ -12,16 +12,17 @@ export default async function handler(event) {
       body = {};
     }
   }
+  const clean = url.pathname.replace(/\.netlify\/functions\/api/, 'api');
   const result = await route({
     method: event.httpMethod || 'GET',
-    path: url.pathname,
+    path: clean,
     query: Object.fromEntries(url.searchParams.entries()),
     body,
     headers: event.headers || {},
   });
-  return {
-    statusCode: result.status,
+  // Netlify's runtime requires a web-standard Response (not {statusCode, body}).
+  return new Response(JSON.stringify(result.json), {
+    status: result.status,
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(result.json),
-  };
+  });
 }
