@@ -19,6 +19,7 @@
     "jsonwebtoken": "^9.0.2"
   },
   "devDependencies": {
+    "netlify-cli": "^27.4.2",
     "vercel": "^59.10.0"
   }
 }

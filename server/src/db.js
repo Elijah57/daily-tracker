@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { createClient } from '@libsql/client';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const sourceDir = path.dirname(fileURLToPath(import.meta.url));
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
@@ -71,7 +71,7 @@ function buildClient() {
     return createClient({ url: tursoUrl, authToken: authToken || undefined });
   }
 
-  const dataDir = path.join(__dirname, '..', 'data');
+  const dataDir = path.join(sourceDir, '..', 'data');
   if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
   return createClient({ url: `file:${path.join(dataDir, 'daily-tracker.db')}` });
 }

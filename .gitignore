@@ -3,3 +3,6 @@ server/data/
 client/dist/
 *.log
 .env
+# Netlify local functions build artifacts
+netlify/functions/*.zip
+netlify/functions/manifest.json
