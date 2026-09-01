@@ -1,0 +1,20 @@
+app = "daily-tracker"
+
+[build]
+
+[env]
+  PORT = "8080"
+  # CHANGE THIS to a long random secret before deploying publicly.
+  # JWT_SECRET = "replace-with-a-long-random-string"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+
+# Persistent volume for the SQLite database, mounted at /app/server/data
+[[mounts]]
+  source = "data"
+  destination = "/app/server/data"
