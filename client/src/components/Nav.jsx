@@ -31,7 +31,7 @@ export default function Nav() {
         </div>
         <div className="nav-user">
           <span className="avatar">{initial}</span>
-          <span style={{ fontSize: 14, fontWeight: 600 }}>{user?.displayName || user?.username}</span>
+          <span className="nav-username">{user?.displayName || user?.username}</span>
           <button className="btn btn-ghost" onClick={logout} style={{ padding: '7px 12px', fontSize: 13 }}>
             Log out
           </button>

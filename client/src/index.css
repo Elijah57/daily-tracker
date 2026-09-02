@@ -112,6 +112,10 @@ textarea {
   align-items: center;
   gap: 12px;
 }
+.nav-username {
+  font-size: 14px;
+  font-weight: 600;
+}
 .avatar {
   width: 34px;
   height: 34px;
@@ -816,10 +820,149 @@ textarea {
 
 @media (max-width: 640px) {
   .page {
-    padding: 20px 14px 48px;
+    padding: 16px 14px 48px;
+  }
+
+  .nav-inner {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+  .brand {
+    font-size: 15px;
+    gap: 7px;
+  }
+  .brand svg {
+    width: 22px;
+    height: 22px;
+  }
+  .nav-links {
+    margin-left: 0;
   }
   .nav-links a {
-    padding: 8px 10px;
+    padding: 6px 8px;
     font-size: 13px;
+  }
+  .nav-user {
+    gap: 6px;
+  }
+  .nav-username {
+    display: none;
+  }
+
+  /* Prevent iOS auto-zoom when focusing inputs smaller than 16px */
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+
+  .card {
+    padding: 16px;
+  }
+  .stat {
+    padding: 14px 16px;
+  }
+  .stat .value {
+    font-size: 26px;
+  }
+
+  /* Bigger touch targets for toggles/delete */
+  .check {
+    width: 30px;
+    height: 30px;
+  }
+  .task .del {
+    padding: 10px;
+  }
+  .goal-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+  .goal-actions .mini-btn {
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+  .color-swatch {
+    width: 36px;
+    height: 36px;
+  }
+
+  /* Stack goal task meta so it doesn't overflow */
+  .goal-task {
+    flex-wrap: wrap;
+  }
+  .goal-task .del-task {
+    margin-left: auto;
+  }
+  .goal-task-meta {
+    flex-wrap: wrap;
+  }
+
+  /* Date range stacks on small screens */
+  .date-range {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .date-range span {
+    display: none;
+  }
+
+  /* Day picker fits width on phones */
+  .day-picker {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .day-picker-hint {
+    margin-left: 0;
+    width: 100%;
+    margin-top: 6px;
+  }
+  .day-chip {
+    min-width: 34px;
+    height: 34px;
+    font-size: 14px;
+  }
+
+  .auth-card {
+    padding: 28px 22px;
+  }
+
+  .modal-backdrop {
+    padding: 0;
+    align-items: flex-end;
+  }
+  .modal {
+    max-width: 100%;
+    max-height: 92vh;
+    border-radius: 16px 16px 0 0;
+  }
+  .modal-head,
+  .modal-body {
+    padding: 16px;
+  }
+
+  .calendar {
+    grid-template-columns: repeat(auto-fill, minmax(24px, 1fr));
+  }
+  .cal-cell {
+    border-radius: 6px;
+  }
+}
+
+@media (max-width: 380px) {
+  .nav-links a {
+    padding: 6px 6px;
+    font-size: 12px;
+  }
+  .brand {
+    font-size: 14px;
+  }
+  .add-sub {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .add-time {
+    flex: 1 1 auto;
   }
 }
