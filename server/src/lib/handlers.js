@@ -5,6 +5,38 @@ import { isoDate, addDays, computeStreaks } from '../stats.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'daily-tracker-dev-secret-change-me';
 
+// Weekday numbers (0=Sun .. 6=Sat) match JS Date#getDay() and SQLite
+// strftime('%w'). Tasks store a comma-separated list, e.g. "2,5" for Tue/Fri.
+// Empty/undefined means the task runs every day.
+const WEEKDAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function normalizeWeekdays(weekdays) {
+  if (Array.isArray(weekdays)) {
+    const cleaned = [...new Set(weekdays.map(Number))]
+      .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6)
+      .sort((a, b) => a - b);
+    return cleaned.length ? cleaned.join(',') : null;
+  }
+  if (typeof weekdays === 'string' && weekdays.trim()) {
+    const cleaned = [...new Set(weekdays.split(',').map(Number))]
+      .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6)
+      .sort((a, b) => a - b);
+    return cleaned.length ? cleaned.join(',') : null;
+  }
+  return null;
+}
+
+function weekdayMatches(weekdays, dateStr) {
+  if (!weekdays) return true;
+  const day = new Date(dateStr + 'T00:00:00').getDay();
+  return String(weekdays).split(',').map(Number).includes(day);
+}
+
+// SQL fragment appended in WHERE clauses: true when a task with this weekday
+// list is due on the given date (bound as the next positional param).
+const WEEKDAY_SQL =
+  "(t.weekdays IS NULL OR t.weekdays = '' OR INSTR(',' || t.weekdays || ',', ',' || CAST(strftime('%w', ?) AS TEXT) || ',') > 0)";
+
 // ---------------------------------------------------------------------------
 // Auth helpers (shared with functions)
 // ---------------------------------------------------------------------------
@@ -46,8 +78,9 @@ async function tasksForDate(userId, date) {
      LEFT JOIN goals g ON g.id = t.goal_id
      WHERE t.user_id = ? AND t.active = 1
        AND (t.goal_id IS NULL OR (g.active = 1 AND g.start_date <= ? AND g.end_date >= ?))
+       AND ${WEEKDAY_SQL}
      ORDER BY t.position, t.id`,
-    [userId, date, date]
+    [userId, date, date, date]
   );
   return withGoal(rows);
 }
@@ -179,7 +212,7 @@ export async function listTasks(req) {
 export async function createTask(req) {
   const auth = verifyAuth(req);
   if (auth.error) return json(401, { error: auth.error });
-  const { title, color, description, time, goalId } = req.body || {};
+  const { title, color, description, time, goalId, weekdays } = req.body || {};
   if (!title || !String(title).trim()) return json(400, { error: 'Task title is required' });
   if (goalId) {
     const goal = await db.get('SELECT * FROM goals WHERE id = ? AND user_id = ?', [goalId, auth.user.id]);
@@ -187,7 +220,7 @@ export async function createTask(req) {
   }
   const posRow = await db.get('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM tasks WHERE user_id = ?', [auth.user.id]);
   const info = await db.run(
-    'INSERT INTO tasks (user_id, title, description, time, color, position, goal_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO tasks (user_id, title, description, time, color, position, goal_id, weekdays) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     [
       auth.user.id,
       String(title).trim(),
@@ -196,6 +229,7 @@ export async function createTask(req) {
       color || null,
       posRow.p,
       goalId || null,
+      normalizeWeekdays(weekdays),
     ]
   );
   const task = await db.get('SELECT * FROM tasks WHERE id = ?', [info.lastInsertRowid]);
@@ -207,7 +241,7 @@ export async function patchTask(req, id) {
   if (auth.error) return json(401, { error: auth.error });
   const task = await db.get('SELECT * FROM tasks WHERE id = ? AND user_id = ?', [id, auth.user.id]);
   if (!task) return json(404, { error: 'Task not found' });
-  const { title, color, active, position, description, time } = req.body || {};
+  const { title, color, active, position, description, time, weekdays } = req.body || {};
   const fields = [];
   const values = [];
   if (title !== undefined) { fields.push('title = ?'); values.push(String(title).trim()); }
@@ -216,6 +250,7 @@ export async function patchTask(req, id) {
   if (color !== undefined) { fields.push('color = ?'); values.push(color || null); }
   if (active !== undefined) { fields.push('active = ?'); values.push(active ? 1 : 0); }
   if (position !== undefined) { fields.push('position = ?'); values.push(position); }
+  if (weekdays !== undefined) { fields.push('weekdays = ?'); values.push(normalizeWeekdays(weekdays)); }
   if (fields.length) {
     values.push(id, auth.user.id);
     await db.run(`UPDATE tasks SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`, values);
@@ -297,8 +332,9 @@ async function dueTaskIdsForDate(userId, date) {
     `SELECT t.id FROM tasks t
      LEFT JOIN goals g ON g.id = t.goal_id
      WHERE t.user_id = ? AND t.active = 1
-       AND (t.goal_id IS NULL OR (g.active = 1 AND g.start_date <= ? AND g.end_date >= ?))`,
-    [userId, date, date]
+       AND (t.goal_id IS NULL OR (g.active = 1 AND g.start_date <= ? AND g.end_date >= ?))
+       AND ${WEEKDAY_SQL}`,
+    [userId, date, date, date]
   );
   return rows.map((r) => r.id);
 }
@@ -307,7 +343,7 @@ async function userStats(userId) {
   const today = isoDate();
 
   // Bulk-load all active tasks + all completions once (avoids HTTP round-trips on Turso).
-  const allTasks = await db.all('SELECT id, goal_id FROM tasks WHERE user_id = ? AND active = 1', [userId]);
+  const allTasks = await db.all('SELECT id, goal_id, weekdays FROM tasks WHERE user_id = ? AND active = 1', [userId]);
   const allTaskIds = allTasks.map((t) => t.id);
   const goalIds = [...new Set(allTasks.map((t) => t.goal_id).filter(Boolean))];
   const goals =
@@ -317,7 +353,13 @@ async function userStats(userId) {
   const goalMap = new Map(goals.map((g) => [g.id, g]));
 
   const dueOn = (date) =>
-    allTasks.filter((t) => !t.goal_id || (goalMap.get(t.goal_id) && goalMap.get(t.goal_id).start_date <= date && goalMap.get(t.goal_id).end_date >= date)).map((t) => t.id);
+    allTasks
+      .filter(
+        (t) =>
+          (!t.goal_id || (goalMap.get(t.goal_id) && goalMap.get(t.goal_id).start_date <= date && goalMap.get(t.goal_id).end_date >= date)) &&
+          weekdayMatches(t.weekdays, date)
+      )
+      .map((t) => t.id);
 
   const comps = allTaskIds.length
     ? await db.all(

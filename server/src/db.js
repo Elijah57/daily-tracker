@@ -96,6 +96,7 @@ async function init(client) {
   await add('description', 'description TEXT');
   await add('time', 'time TEXT');
   await add('goal_id', 'goal_id INTEGER');
+  await add('weekdays', 'weekdays TEXT');
 }
 
 let db = null;

@@ -4,6 +4,28 @@ import { todayISO, addDaysISO, fmtShort } from '../utils.js';
 
 const GOAL_COLORS = ['#a5b8a9', '#c3a6a0', '#b0bec5', '#c9bca5', '#a9a6c0', '#c4b3a9', '#d6b0a0'];
 
+// Day numbers match JS Date#getDay(): 0=Sun .. 6=Sat.
+const DAY_OPTIONS = [
+  { n: 'S', v: 0 },
+  { n: 'M', v: 1 },
+  { n: 'T', v: 2 },
+  { n: 'W', v: 3 },
+  { n: 'T', v: 4 },
+  { n: 'F', v: 5 },
+  { n: 'S', v: 6 },
+];
+const DAY_FULL = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+// "2,5" -> "Tue, Fri"; '' or falsy -> null
+function weekdaysLabel(val) {
+  if (!val) return null;
+  return String(val)
+    .split(',')
+    .map((n) => DAY_FULL[Number(n)])
+    .filter(Boolean)
+    .join(', ');
+}
+
 export default function GoalsManager({ goals, onClose, onChanged }) {
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -159,8 +181,14 @@ function GoalGroup({ title, goals, onEdit, onRemove, onChanged }) {
 
 function GoalItem({ goal, onEdit, onRemove, onChanged }) {
   const [openAdd, setOpenAdd] = useState(false);
-  const [taskForm, setTaskForm] = useState({ title: '', time: '', description: '' });
+  const [taskForm, setTaskForm] = useState({ title: '', time: '', description: '', weekdays: [] });
   const [busy, setBusy] = useState(false);
+
+  const toggleDay = (v) =>
+    setTaskForm((f) => ({
+      ...f,
+      weekdays: f.weekdays.includes(v) ? f.weekdays.filter((d) => d !== v) : [...f.weekdays, v].sort(),
+    }));
 
   const addTask = async () => {
     if (!taskForm.title.trim()) return;
@@ -174,9 +202,10 @@ function GoalItem({ goal, onEdit, onRemove, onChanged }) {
           time: taskForm.time || null,
           goalId: goal.id,
           color: goal.color,
+          weekdays: taskForm.weekdays,
         }),
       });
-      setTaskForm({ title: '', time: '', description: '' });
+      setTaskForm({ title: '', time: '', description: '', weekdays: [] });
       setOpenAdd(false);
       await onChanged();
     } finally {
@@ -208,6 +237,7 @@ function GoalItem({ goal, onEdit, onRemove, onChanged }) {
               <div key={t.id} className="goal-task">
                 <span>{t.title}</span>
                 <span className="goal-task-meta">
+                  {t.weekdays && <span className="task-time">every {weekdaysLabel(t.weekdays)}</span>}
                   {t.time && <span className="task-time">at {t.time}</span>}
                   {t.description && <span className="goal-task-desc">{t.description}</span>}
                 </span>
@@ -235,6 +265,24 @@ function GoalItem({ goal, onEdit, onRemove, onChanged }) {
                 value={taskForm.time}
                 onChange={(e) => setTaskForm({ ...taskForm, time: e.target.value })}
               />
+            </div>
+            <div className="day-picker">
+              <span className="day-picker-label">Repeats on</span>
+              {DAY_OPTIONS.map(({ n, v }) => (
+                <button
+                  key={v}
+                  type="button"
+                  className={`day-chip${taskForm.weekdays.includes(v) ? ' active' : ''}`}
+                  onClick={() => toggleDay(v)}
+                  aria-pressed={taskForm.weekdays.includes(v)}
+                  title={DAY_FULL[v]}
+                >
+                  {n}
+                </button>
+              ))}
+              <span className="day-picker-hint">
+                {taskForm.weekdays.length ? `${taskForm.weekdays.length} day(s)/week` : 'every day'}
+              </span>
             </div>
             <button className="btn" onClick={addTask} disabled={busy || !taskForm.title.trim()}>
               Add task
