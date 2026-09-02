@@ -14,9 +14,9 @@ function apiPath(pathname) {
 }
 
 export default async function handler(event) {
-  const url = new URL(event.rawUrl || event.path, 'http://localhost');
-  const clean = apiPath(url.pathname);
-  console.log('api fn path=', JSON.stringify(url.pathname), 'clean=', clean, 'rawUrl=', String(event.rawUrl));
+  const qUrl = new URL(event.rawUrl || event.path, 'http://localhost');
+  const path = apiPath(event.path) || apiPath(qUrl.pathname) || '/api/';
+  console.log('api fn path=', JSON.stringify(event.path), 'path=', path, 'rawUrl=', String(event.rawUrl));
   let body = {};
   if (event.body) {
     try {
@@ -27,12 +27,12 @@ export default async function handler(event) {
   }
   const result = await route({
     method: event.httpMethod || 'GET',
-    path: clean,
-    query: Object.fromEntries(url.searchParams.entries()),
+    path,
+    query: Object.fromEntries(qUrl.searchParams.entries()),
     body,
     headers: event.headers || {},
   });
-  const json = result.status === 404 ? { ...result.json, received: url.pathname, cleaned: clean } : result.json;
+  const json = result.status === 404 ? { ...result.json, received: event.path || qUrl.pathname, cleaned: path } : result.json;
   // Netlify's runtime requires a web-standard Response (not {statusCode, body}).
   return new Response(JSON.stringify(json), {
     status: result.status,
