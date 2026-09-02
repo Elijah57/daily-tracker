@@ -77,7 +77,7 @@ function buildClient() {
 }
 
 async function init(client) {
-  await client.batch(SCHEMA.split(';').filter((s) => s.trim()).map((sql) => ({ sql })));
+  await client.batch(SCHEMA.split(';').filter((s) => s.trim()).map((sql) => ({ sql, args: [] })));
 
   // migrations: ensure optional task columns exist (ignore errors if present).
   let cols = [];
