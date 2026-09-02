@@ -13,7 +13,40 @@ function apiPath(pathname) {
   return '/api/' + parts.join('/');
 }
 
+// Netlify's modern runtime passes a web-standard Request as the first argument.
+// Detect it by the presence of .url/.method; fall back to the legacy AWS-style
+// event ({ path, httpMethod, body, headers }) for older runtimes / local CLI.
+function isRequestLike(x) {
+  return x && typeof x.url === 'string' && typeof x.method === 'string';
+}
+
 export default async function handler(event) {
+  if (isRequestLike(event)) return await handleRequest(event);
+  return await handleLegacyEvent(event);
+}
+
+async function handleRequest(req) {
+  const url = new URL(req.url || '/', 'http://localhost');
+  const path = apiPath(url.pathname);
+  console.log('api fn request=', JSON.stringify(req.method), 'url=', String(req.url));
+  let body = {};
+  try {
+    const text = await req.text();
+    if (text) body = JSON.parse(text);
+  } catch {
+    body = {};
+  }
+  const headers = {};
+  req.headers?.forEach?.((value, key) => { headers[key] = value; });
+  const result = await route({ method: req.method || 'GET', path, query: Object.fromEntries(url.searchParams.entries()), body, headers });
+  const json = result.status === 404 ? { ...result.json, received: url.pathname, cleaned: path } : result.json;
+  return new Response(JSON.stringify(json), {
+    status: result.status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+async function handleLegacyEvent(event) {
   const qUrl = new URL(event.rawUrl || event.path, 'http://localhost');
   const path = apiPath(event.path) || apiPath(qUrl.pathname) || '/api/';
   console.log('api fn path=', JSON.stringify(event.path), 'path=', path, 'rawUrl=', String(event.rawUrl));
@@ -33,7 +66,6 @@ export default async function handler(event) {
     headers: event.headers || {},
   });
   const json = result.status === 404 ? { ...result.json, received: event.path || qUrl.pathname, cleaned: path } : result.json;
-  // Netlify's runtime requires a web-standard Response (not {statusCode, body}).
   return new Response(JSON.stringify(json), {
     status: result.status,
     headers: { 'Content-Type': 'application/json' },
