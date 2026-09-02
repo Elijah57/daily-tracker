@@ -2,21 +2,21 @@ import { route } from '../../server/src/lib/router.js';
 
 // Normalize whatever path Netlify hands us back to /api/...
 function apiPath(pathname) {
-  // Strip a function-internal prefix if present.
-  let p = pathname.replace(/\/?\.netlify\/functions\/\w+/, '');
-  if (!p.startsWith('/api')) {
-    // Last resort: extract the segment that follows /api, or prepend it.
-    const idx = p.indexOf('/api');
-    if (idx >= 0) p = p.slice(idx);
-    else p = '/api' + p;
-  }
-  return p || '/api';
+  let p = (pathname || '').replace(/^\/+/, '');
+  // Strip the Netlify function-internal prefix entirely, e.g. ".netlify/functions/api/..."
+  p = p.replace(/^\.netlify\/functions\/[^/]*\/?/, '');
+  // Drop "undefined" placeholder segments Netlify can insert.
+  const parts = p.split('/').filter((s) => s && s !== 'undefined');
+  if (parts[0] === 'api') return '/' + parts.join('/');
+  const i = p.indexOf('api/');
+  if (i >= 0) return '/' + p.slice(i);
+  return '/api/' + parts.join('/');
 }
 
 export default async function handler(event) {
   const url = new URL(event.rawUrl || event.path, 'http://localhost');
   const clean = apiPath(url.pathname);
-  console.log('api fn path=', JSON.stringify(url.pathname), 'clean=', clean);
+  console.log('api fn path=', JSON.stringify(url.pathname), 'clean=', clean, 'rawUrl=', String(event.rawUrl));
   let body = {};
   if (event.body) {
     try {
@@ -32,8 +32,9 @@ export default async function handler(event) {
     body,
     headers: event.headers || {},
   });
+  const json = result.status === 404 ? { ...result.json, received: url.pathname, cleaned: clean } : result.json;
   // Netlify's runtime requires a web-standard Response (not {statusCode, body}).
-  return new Response(JSON.stringify(result.json), {
+  return new Response(JSON.stringify(json), {
     status: result.status,
     headers: { 'Content-Type': 'application/json' },
   });
