@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { api, getStoredUser, storeAuth, clearAuth } from './api.js';
 import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
+import History from './pages/History.jsx';
 import Friends from './pages/Friends.jsx';
 import Nav from './components/Nav.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
@@ -41,6 +42,15 @@ export default function App() {
             <Protected>
               <Nav />
               <Dashboard />
+            </Protected>
+          }
+        />
+        <Route
+          path="/history"
+          element={
+            <Protected>
+              <Nav />
+              <History />
             </Protected>
           }
         />

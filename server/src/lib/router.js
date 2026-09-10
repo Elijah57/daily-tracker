@@ -13,6 +13,7 @@ import {
   listCompletions,
   addCompletion,
   removeCompletion,
+  getHistory,
   listNotes,
   putNote,
   getStats,
@@ -62,6 +63,10 @@ export async function route({ method, path, query = {}, body = {}, headers = {} 
       if (method === 'POST' && !r2) return await addCompletion(req);
       // /completions/:taskId/:date
       if (r2 && segs[1] && method === 'DELETE') return await removeCompletion(req, Number(r2), segs[1]);
+      break;
+
+    case 'history':
+      if (method === 'GET') return await getHistory(req, query);
       break;
 
     case 'notes':

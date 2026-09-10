@@ -289,7 +289,14 @@ export async function addCompletion(req) {
   const d = date || isoDate();
   const task = await db.get('SELECT * FROM tasks WHERE id = ? AND user_id = ?', [taskId, auth.user.id]);
   if (!task) return json(404, { error: 'Task not found' });
-  await db.run('INSERT OR IGNORE INTO completions (task_id, user_id, date) VALUES (?, ?, ?)', [taskId, auth.user.id, d]);
+  await db.run(
+    `INSERT INTO completions (task_id, user_id, date, task_title, task_color)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(task_id, date) DO UPDATE SET
+       task_title = excluded.task_title,
+       task_color = excluded.task_color`,
+    [taskId, auth.user.id, d, task.title, task.color]
+  );
   return json(201, { taskId, date: d });
 }
 
@@ -298,6 +305,49 @@ export async function removeCompletion(req, taskId, date) {
   if (auth.error) return json(401, { error: auth.error });
   await db.run('DELETE FROM completions WHERE task_id = ? AND user_id = ? AND date = ?', [taskId, auth.user.id, date]);
   return ok({ ok: true });
+}
+
+// ---------------------------------------------------------------------------
+// History (all-time completion log)
+// ---------------------------------------------------------------------------
+export async function getHistory(req, query) {
+  const auth = verifyAuth(req);
+  if (auth.error) return json(401, { error: auth.error });
+  const days = query && query.days && !Number.isNaN(parseInt(query.days, 10)) ? parseInt(query.days, 10) : 0;
+
+  let sql = 'SELECT id, task_id, date, task_title, task_color, created_at FROM completions WHERE user_id = ?';
+  const params = [auth.user.id];
+  if (days > 0) {
+    sql += ' AND date >= ?';
+    params.push(addDays(isoDate(), -(days - 1)));
+  }
+  sql += ' ORDER BY date DESC, id DESC LIMIT 2000';
+
+  const rows = await db.all(sql, params);
+  if (!rows.length) return ok({ total: 0, events: [] });
+
+  const ids = [...new Set(rows.map((r) => r.task_id))];
+  const tasks = await db.all(
+    `SELECT id, title, color, active FROM tasks WHERE user_id = ? AND id IN (${ids.map(() => '?').join(',')})`,
+    [auth.user.id, ...ids]
+  );
+  const taskMap = new Map(tasks.map((t) => [t.id, t]));
+
+  // Prefer the live task (if it still exists and is active), else the snapshot.
+  const events = rows.map((r) => {
+    const live = taskMap.get(r.task_id);
+    const current = live && live.active ? live : null;
+    return {
+      id: r.id,
+      taskId: r.task_id,
+      date: r.date,
+      createdAt: r.created_at,
+      title: (current && current.title) || r.task_title || null,
+      color: (current && current.color) || r.task_color || null,
+    };
+  });
+
+  return ok({ total: rows.length, events });
 }
 
 // ---------------------------------------------------------------------------
@@ -343,7 +393,10 @@ async function userStats(userId) {
   const today = isoDate();
 
   // Bulk-load all active tasks + all completions once (avoids HTTP round-trips on Turso).
-  const allTasks = await db.all('SELECT id, goal_id, weekdays FROM tasks WHERE user_id = ? AND active = 1', [userId]);
+  const allTasks = await db.all(
+    'SELECT id, goal_id, weekdays, title, color FROM tasks WHERE user_id = ? AND active = 1',
+    [userId]
+  );
   const allTaskIds = allTasks.map((t) => t.id);
   const goalIds = [...new Set(allTasks.map((t) => t.goal_id).filter(Boolean))];
   const goals =
@@ -361,12 +414,10 @@ async function userStats(userId) {
       )
       .map((t) => t.id);
 
-  const comps = allTaskIds.length
-    ? await db.all(
-        `SELECT task_id, date FROM completions WHERE user_id = ? AND task_id IN (${allTaskIds.map(() => '?').join(',')})`,
-        [userId, ...allTaskIds]
-      )
-    : [];
+  const comps = await db.all(
+    'SELECT task_id, date, task_title, task_color FROM completions WHERE user_id = ?',
+    [userId]
+  );
 
   const dueToday = dueOn(today);
   const byDate = {};
@@ -380,22 +431,61 @@ async function userStats(userId) {
 
   const streaks = computeStreaks(daily.map((date) => ({ date })), today);
 
-  let last30Count = 0;
+  const last30 = [];
+  let last30Completions = 0;
   let due30Count = 0;
-  for (let i = 0; i < 30; i++) {
+  for (let i = 29; i >= 0; i--) {
     const d = addDays(today, -i);
-    due30Count += dueOn(d).length;
-    if (byDate[d]) last30Count += byDate[d].filter((id) => dueOn(d).includes(id)).length;
+    const due = dueOn(d);
+    const done = byDate[d] ? byDate[d].filter((id) => due.includes(id)).length : 0;
+    last30.push({ date: d, done, total: due.length });
+    last30Completions += done;
+    due30Count += due.length;
   }
+
+  // All-time analytics.
+  const weekdayTotals = [0, 0, 0, 0, 0, 0, 0];
+  const daysDoneSet = new Set();
+  const perTaskMap = new Map();
+  for (const c of comps) {
+    weekdayTotals[new Date(c.date + 'T00:00:00').getDay()]++;
+    daysDoneSet.add(c.date);
+    let row = perTaskMap.get(c.task_id);
+    if (!row) {
+      row = { id: c.task_id, title: c.task_title || null, color: c.task_color || null, total: 0, last: c.date };
+      perTaskMap.set(c.task_id, row);
+    }
+    row.total++;
+    if (c.date > row.last) row.last = c.date;
+  }
+  let bestDay = 0;
+  for (let i = 1; i < 7; i++) if (weekdayTotals[i] > weekdayTotals[bestDay]) bestDay = i;
+
+  const activeTaskMap = new Map(allTasks.map((t) => [t.id, t]));
+  const perTask = [...perTaskMap.values()]
+    .map((row) => {
+      const t = activeTaskMap.get(row.id);
+      if (t) {
+        row.title = t.title;
+        row.color = t.color;
+      }
+      return row;
+    })
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 20);
 
   return {
     taskCount: dueToday.length,
     currentStreak: streaks.current,
     bestStreak: streaks.best,
     totalCompletions: comps.length,
-    last30Completions: last30Count,
-    completionRate: due30Count ? Math.round((last30Count / due30Count) * 100) : 0,
-    bestDay: 0,
+    totalDays: daysDoneSet.size,
+    last30Completions,
+    completionRate: due30Count ? Math.round((last30Completions / due30Count) * 100) : 0,
+    bestDay,
+    weekdayTotals,
+    last30,
+    perTask,
     daily,
   };
 }

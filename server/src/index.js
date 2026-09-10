@@ -17,7 +17,7 @@ app.use(express.json());
 app.use('/api', async (req, res) => {
   const result = await route({
     method: req.method,
-    path: req.originalUrl,
+    path: req.baseUrl + req.path,
     query: req.query,
     body: req.body || {},
     headers: req.headers,

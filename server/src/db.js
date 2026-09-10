@@ -43,6 +43,8 @@ CREATE TABLE IF NOT EXISTS completions (
   task_id INTEGER NOT NULL,
   user_id INTEGER NOT NULL,
   date TEXT NOT NULL,
+  task_title TEXT,
+  task_color TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   UNIQUE(task_id, date)
 );
@@ -97,6 +99,32 @@ async function init(client) {
   await add('time', 'time TEXT');
   await add('goal_id', 'goal_id INTEGER');
   await add('weekdays', 'weekdays TEXT');
+
+  // Migrations for completions: snapshot the task's title/color at completion
+  // time so the history log survives task and goal deletion.
+  let compCols = [];
+  try {
+    const res = await client.execute('PRAGMA table_info(completions)');
+    compCols = res.rows.map((r) => r.name);
+  } catch {
+    return;
+  }
+  const addComp = (name, ddl) => {
+    if (!compCols.includes(name)) {
+      return client.execute(`ALTER TABLE completions ADD COLUMN ${ddl}`).catch(() => {});
+    }
+    return Promise.resolve();
+  };
+  await addComp('task_title', 'task_title TEXT');
+  await addComp('task_color', 'task_color TEXT');
+
+  // Backfill snapshots for rows created before the columns existed.
+  await client.execute(
+    `UPDATE completions SET
+       task_title = COALESCE((SELECT title FROM tasks WHERE tasks.id = completions.task_id), task_title),
+       task_color = COALESCE((SELECT color FROM tasks WHERE tasks.id = completions.task_id), task_color)
+     WHERE task_title IS NULL`
+  );
 }
 
 let db = null;

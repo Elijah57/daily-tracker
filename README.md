@@ -8,6 +8,8 @@ A small daily task/habit tracker for you and your friends — flat, matte design
 - **Daily tasks** — each person has their own checklist of recurring daily tasks.
 - **Streaks** — current streak + best streak (a day only counts when *all* tasks are done).
 - **Stats** — today's progress bar, completion counts, and a history calendar.
+- **History** — a log of every completed task (survives task deletion) plus analytics:
+  completion rate, best day-of-week, last-30-day chart, and per-task totals.
 - **Friends** — see how everyone else is doing for friendly accountability.
 
 ## Stack
