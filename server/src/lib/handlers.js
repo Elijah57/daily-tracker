@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import db from '../db.js';
-import { isoDate, addDays, computeStreaks } from '../stats.js';
+import { isoDate, addDays, daysBetween, computeStreaks } from '../stats.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'daily-tracker-dev-secret-change-me';
 
@@ -30,6 +30,50 @@ function weekdayMatches(weekdays, dateStr) {
   if (!weekdays) return true;
   const day = new Date(dateStr + 'T00:00:00').getDay();
   return String(weekdays).split(',').map(Number).includes(day);
+}
+
+function dueOnTask(t, goalMap, date) {
+  if (t.goal_id) {
+    const g = goalMap.get(t.goal_id);
+    if (!g || g.start_date > date || g.end_date < date) return false;
+  }
+  return weekdayMatches(t.weekdays, date);
+}
+
+// Current streak for a single task: consecutive scheduled days (per weekdays +
+// goal range) walking backwards from today, completed. Today being incomplete
+// doesn't break the streak (mirrors computeStreaks).
+function taskCurrentStreak(completedSet, t, goalMap, today) {
+  let streak = 0;
+  let cursor = today;
+  if (!completedSet.has(cursor)) cursor = addDays(today, -1);
+  for (let guard = 0; guard < 3660; guard++) {
+    if (!dueOnTask(t, goalMap, cursor)) {
+      cursor = addDays(cursor, -1);
+      continue;
+    }
+    if (!completedSet.has(cursor)) break;
+    streak++;
+    cursor = addDays(cursor, -1);
+  }
+  return streak;
+}
+
+// { done, total, percent } for a goal, counting each scheduled day inside the
+// goal's date range that had at least one active task, done when all of them
+// were completed that day.
+function goalProgress(g, tasks, compsByTask) {
+  const span = daysBetween(g.start_date, g.end_date);
+  let total = 0;
+  let done = 0;
+  for (let i = 0; i <= span; i++) {
+    const date = addDays(g.start_date, i);
+    const due = tasks.filter((t) => weekdayMatches(t.weekdays, date));
+    if (!due.length) continue;
+    total++;
+    if (due.every((t) => compsByTask.get(t.id) && compsByTask.get(t.id).has(date))) done++;
+  }
+  return { done, total, percent: total ? Math.round((done / total) * 100) : 0 };
 }
 
 // SQL fragment appended in WHERE clauses: true when a task with this weekday
@@ -141,13 +185,29 @@ export async function listGoals(req) {
   const rows = await db.all('SELECT * FROM goals WHERE user_id = ? AND active = 1 ORDER BY start_date, id', [
     auth.user.id,
   ]);
+
+  // Bulk-load all goal tasks + completions once so each goal's progress is a
+  // simple in-memory computation (avoids N queries on Turso).
+  const taskRows = await db.all(
+    'SELECT * FROM tasks WHERE user_id = ? AND goal_id IS NOT NULL AND active = 1 ORDER BY position, id',
+    [auth.user.id]
+  );
+  const compRows = await db.all('SELECT task_id, date FROM completions WHERE user_id = ?', [auth.user.id]);
+  const compsByTask = new Map();
+  for (const c of compRows) {
+    if (!compsByTask.has(c.task_id)) compsByTask.set(c.task_id, new Set());
+    compsByTask.get(c.task_id).add(c.date);
+  }
+  const tasksByGoal = new Map();
+  for (const t of taskRows) {
+    if (!tasksByGoal.has(t.goal_id)) tasksByGoal.set(t.goal_id, []);
+    tasksByGoal.get(t.goal_id).push(t);
+  }
+
   const result = [];
   for (const g of rows) {
-    const taskRows = await db.all('SELECT * FROM tasks WHERE user_id = ? AND goal_id = ? AND active = 1 ORDER BY position, id', [
-      auth.user.id,
-      g.id,
-    ]);
-    result.push({ ...g, tasks: await withGoal(taskRows) });
+    const goalTasks = tasksByGoal.get(g.id) || [];
+    result.push({ ...g, progress: goalProgress(g, goalTasks, compsByTask), tasks: await withGoal(goalTasks) });
   }
   return ok(result);
 }
@@ -418,6 +478,11 @@ async function userStats(userId) {
     'SELECT task_id, date, task_title, task_color FROM completions WHERE user_id = ?',
     [userId]
   );
+  const compsByTask = new Map();
+  for (const c of comps) {
+    if (!compsByTask.has(c.task_id)) compsByTask.set(c.task_id, new Set());
+    compsByTask.get(c.task_id).add(c.date);
+  }
 
   const dueToday = dueOn(today);
   const byDate = {};
@@ -461,6 +526,22 @@ async function userStats(userId) {
   let bestDay = 0;
   for (let i = 1; i < 7; i++) if (weekdayTotals[i] > weekdayTotals[bestDay]) bestDay = i;
 
+  // Last 12 weeks (Sunday-start), for the weekly chart.
+  const sunday = addDays(today, -new Date(today + 'T00:00:00').getDay());
+  const weekly = [];
+  for (let w = 11; w >= 0; w--) {
+    const start = addDays(sunday, -7 * w);
+    let done = 0;
+    let total = 0;
+    for (let d = 0; d < 7; d++) {
+      const date = addDays(start, d);
+      const due = dueOn(date);
+      total += due.length;
+      done += byDate[date] ? byDate[date].filter((id) => due.includes(id)).length : 0;
+    }
+    weekly.push({ start, done, total });
+  }
+
   const activeTaskMap = new Map(allTasks.map((t) => [t.id, t]));
   const perTask = [...perTaskMap.values()]
     .map((row) => {
@@ -468,6 +549,7 @@ async function userStats(userId) {
       if (t) {
         row.title = t.title;
         row.color = t.color;
+        row.streak = taskCurrentStreak(compsByTask.get(row.id) || new Set(), t, goalMap, today);
       }
       return row;
     })
@@ -485,8 +567,10 @@ async function userStats(userId) {
     bestDay,
     weekdayTotals,
     last30,
+    weekly,
     perTask,
     daily,
+    perfectDays: daily.length,
   };
 }
 

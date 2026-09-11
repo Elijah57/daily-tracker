@@ -231,6 +231,20 @@ function GoalItem({ goal, onEdit, onRemove, onChanged }) {
           </div>
         </div>
 
+        {goal.progress && goal.progress.total > 0 && (
+          <div className="goal-progress">
+            <div className="goal-progress-meta">
+              <span className="goal-progress-label">{goal.progress.percent}% complete</span>
+              <span className="goal-progress-text">
+                {goal.progress.done}/{goal.progress.total} full days
+              </span>
+            </div>
+            <div className="goal-progress-track">
+              <div className="goal-progress-fill" style={{ width: `${goal.progress.percent}%` }} />
+            </div>
+          </div>
+        )}
+
         {goal.tasks.length > 0 && (
           <div className="goal-tasks">
             {goal.tasks.map((t) => (

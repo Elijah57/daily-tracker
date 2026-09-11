@@ -147,6 +147,9 @@ textarea {
 .grid-3 {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
+.grid-4 {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
 
 .section-title {
   font-size: 15px;
@@ -709,6 +712,37 @@ textarea {
   margin-left: auto;
 }
 
+.goal-progress {
+  margin: 12px 0 2px;
+}
+.goal-progress-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.goal-progress-label {
+  font-weight: 600;
+  color: var(--primary-dark);
+}
+.goal-progress-text {
+  color: var(--text-muted);
+}
+.goal-progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-matte);
+  overflow: hidden;
+}
+.goal-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--gc, var(--accent));
+  transition: width 0.3s ease;
+}
+
 .goal-tasks {
   margin-top: 12px;
   display: flex;
@@ -926,6 +960,16 @@ textarea {
   color: var(--text-muted);
   flex-shrink: 0;
 }
+.streak-pill {
+  background: rgba(165, 184, 169, 0.35);
+  color: var(--primary-dark);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 .top-task .track {
   width: 64px;
   height: 6px;
@@ -1038,11 +1082,29 @@ textarea {
   }
 
   /* Bigger touch targets for toggles/delete */
-  .check {
+.check {
     width: 30px;
     height: 30px;
   }
+  .task .edit {
+    padding: 10px;
+  }
   .task .del {
+    padding: 10px;
+  }
+.task .edit {
+  color: var(--text-muted);
+  padding: 6px;
+  border-radius: 6px;
+  font-size: 15px;
+  line-height: 1;
+  transition: all 0.15s;
+}
+.task .edit:hover {
+  color: var(--primary-dark);
+  background: rgba(111, 122, 134, 0.12);
+}
+.task .del {
     padding: 10px;
   }
   .goal-actions {

@@ -20,6 +20,9 @@ export default function Dashboard() {
   const [note, setNote] = useState('');
   const [noteSaved, setNoteSaved] = useState(false);
   const [showGoals, setShowGoals] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [editForm, setEditForm] = useState({ title: '', description: '', time: '', color: '' });
+  const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
     const [t, g, s, c, n] = await Promise.all([
@@ -109,6 +112,32 @@ export default function Dashboard() {
     setStats(s);
   };
 
+  const startEdit = (task) => {
+    setEditing(task);
+    setEditForm({
+      title: task.title,
+      description: task.description || '',
+      time: task.time || '',
+      color: task.color || PALETTE[0],
+    });
+  };
+
+  const saveEdit = async (e) => {
+    e.preventDefault();
+    if (!editForm.title.trim()) return;
+    setSaving(true);
+    try {
+      await api(`/tasks/${editing.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(editForm),
+      });
+      setEditing(null);
+      await refresh();
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const doneToday = tasks.filter((t) => completions[`${t.id}:${todayISO()}`]).length;
 
   if (loading) return <div className="loading">Loading…</div>;
@@ -191,6 +220,7 @@ export default function Dashboard() {
                       </span>
                     )}
                   </span>
+                  <button className="edit" onClick={() => startEdit(task)} aria-label="Edit task">✎</button>
                   <button className="del" onClick={() => removeTask(task.id)} aria-label="Delete task">
                     ✕
                   </button>
@@ -259,6 +289,65 @@ export default function Dashboard() {
           onClose={() => setShowGoals(false)}
           onChanged={refresh}
         />
+      )}
+
+      {editing && (
+        <div className="modal-backdrop" onClick={() => setEditing(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2>Edit task</h2>
+              <button className="modal-close" onClick={() => setEditing(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <form className="goal-form" onSubmit={saveEdit}>
+                <div className="field">
+                  <label>Task name</label>
+                  <input
+                    value={editForm.title}
+                    onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                    autoFocus
+                  />
+                </div>
+                <div className="field">
+                  <label>Description (optional)</label>
+                  <input
+                    value={editForm.description}
+                    onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                  />
+                </div>
+                <div className="field">
+                  <label>Time</label>
+                  <input
+                    type="time"
+                    value={editForm.time}
+                    onChange={(e) => setEditForm({ ...editForm, time: e.target.value })}
+                  />
+                </div>
+                <div className="field">
+                  <label>Color tag</label>
+                  <div className="color-row">
+                    {PALETTE.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        className={`color-swatch ${editForm.color === c ? 'active' : ''}`}
+                        style={{ background: c }}
+                        onClick={() => setEditForm({ ...editForm, color: c })}
+                        aria-label={c}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <div className="modal-actions">
+                  <button type="button" className="btn btn-ghost" onClick={() => setEditing(null)}>Cancel</button>
+                  <button className="btn" disabled={saving || !editForm.title.trim()}>
+                    {saving ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

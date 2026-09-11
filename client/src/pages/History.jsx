@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api.js';
-import { todayISO, addDaysISO } from '../utils.js';
+import { todayISO, addDaysISO, fmtShort } from '../utils.js';
 
 const RANGES = [
   { label: '7d', days: 7 },
@@ -63,6 +63,7 @@ export default function History() {
   const last30 = stats?.last30 || [];
   const maxDay = last30.reduce((m, d) => Math.max(m, d.done), 0);
   const maxWeekday = Math.max(0, ...(stats?.weekdayTotals || []));
+  const maxWeek = Math.max(0, ...(stats?.weekly || []).map((w) => w.done));
   const maxTask = Math.max(0, ...(stats?.perTask || []).map((t) => t.total));
 
   // Group history events into date buckets (events come newest-first).
@@ -82,7 +83,7 @@ export default function History() {
         </p>
       </div>
 
-      <div className="grid grid-3" style={{ marginBottom: 22 }}>
+      <div className="grid grid-4" style={{ marginBottom: 22 }}>
         <div className="stat">
           <div className="label">Total completions</div>
           <div className="value">{stats?.totalCompletions ?? 0}</div>
@@ -102,6 +103,13 @@ export default function History() {
           <div className="value">{stats?.bestStreak ?? 0}</div>
           <div className="sub">
             best day: {WEEKDAYS[stats?.bestDay ?? 0].slice(0, 3)} · {stats?.currentStreak ?? 0}-day streak now
+          </div>
+        </div>
+        <div className="stat">
+          <div className="label">Perfect days</div>
+          <div className="value">{stats?.perfectDays ?? 0}</div>
+          <div className="sub">
+            days when every task got done
           </div>
         </div>
       </div>
@@ -157,6 +165,30 @@ export default function History() {
         </div>
       </div>
 
+      <div className="card" style={{ marginBottom: 22 }}>
+        <div className="section-title">Weekly view</div>
+        <div className="chart">
+          <div className="chart-bars">
+            {(stats?.weekly || []).map((w) => (
+              <div
+                key={w.start}
+                className="chart-col"
+                title={`Week of ${fmtShort(w.start)} — ${w.done}/${w.total} done`}
+              >
+                <div
+                  className={`chart-bar ${w.done >= w.total && w.total > 0 ? 'full' : w.done > 0 ? 'partial' : 'track'}`}
+                  style={{ height: `${w.total === 0 ? 4 : Math.max(6, (w.done / maxWeek) * 100)}%` }}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="chart-foot">
+            <span>{stats?.weekly?.length ? fmtShort(stats.weekly[0].start) : '—'}</span>
+            <span>{stats?.weekly?.length ? fmtShort(stats.weekly[stats.weekly.length - 1].start) : '—'}</span>
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-2">
         <div className="card">
           <div className="section-title">Top tasks</div>
@@ -170,6 +202,9 @@ export default function History() {
                   {t.title || 'Completed task'}
                 </span>
                 <span className="count">{t.total}×</span>
+                {typeof t.streak === 'number' && t.streak > 0 && (
+                  <span className="streak-pill">{t.streak}-day</span>
+                )}
                 <span className="track">
                   <span className="fill" style={{ width: `${maxTask ? (t.total / maxTask) * 100 : 0}%` }} />
                 </span>
