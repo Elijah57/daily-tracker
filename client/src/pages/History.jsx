@@ -32,6 +32,7 @@ function lastCompleted(dateStr) {
 export default function History() {
   const [stats, setStats] = useState(null);
   const [events, setEvents] = useState([]);
+  const [notes, setNotes] = useState([]);
   const [range, setRange] = useState(30);
   const [loading, setLoading] = useState(true);
 
@@ -40,13 +41,15 @@ export default function History() {
     (async () => {
       setLoading(true);
       try {
-        const [s, h] = await Promise.all([
+        const [s, h, n] = await Promise.all([
           api('/stats'),
           range ? api(`/history?days=${range}`) : api('/history'),
+          api('/notes'),
         ]);
         if (cancelled) return;
         setStats(s);
         setEvents(h.events);
+        setNotes((n || []).filter((x) => x.body && String(x.body).trim()));
       } catch {
         if (!cancelled) setEvents([]);
       } finally {
@@ -187,6 +190,22 @@ export default function History() {
             <span>{stats?.weekly?.length ? fmtShort(stats.weekly[stats.weekly.length - 1].start) : '—'}</span>
           </div>
         </div>
+      </div>
+
+      <div className="card notes-card" style={{ marginBottom: 22 }}>
+        <div className="section-title">Notes timeline</div>
+        {notes.length === 0 ? (
+          <div className="empty">Write a note on the Dashboard and it'll show up here.</div>
+        ) : (
+          <div className="note-list">
+            {notes.map((n) => (
+              <div key={n.date} className="note-item">
+                <div className="note-date">{dayLabel(n.date)}</div>
+                <div className="note-body">{n.body}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-2">
