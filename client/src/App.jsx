@@ -4,6 +4,7 @@ import { api, getStoredUser, storeAuth, clearAuth } from './api.js';
 import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import History from './pages/History.jsx';
+import Notes from './pages/Notes.jsx';
 import Friends from './pages/Friends.jsx';
 import Nav from './components/Nav.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
@@ -51,6 +52,15 @@ export default function App() {
             <Protected>
               <Nav />
               <History />
+            </Protected>
+          }
+        />
+        <Route
+          path="/notes"
+          element={
+            <Protected>
+              <Nav />
+              <Notes />
             </Protected>
           }
         />

@@ -28,6 +28,9 @@ export default function Nav() {
           <NavLink to="/history" className={({ isActive }) => (isActive ? 'active' : '')}>
             History
           </NavLink>
+          <NavLink to="/notes" className={({ isActive }) => (isActive ? 'active' : '')}>
+            Notes
+          </NavLink>
           <NavLink to="/friends" className={({ isActive }) => (isActive ? 'active' : '')}>
             Friends
           </NavLink>

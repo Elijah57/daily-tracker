@@ -1104,42 +1104,25 @@ textarea {
   color: var(--text-muted);
 }
 
-.note-list {
-  max-height: 480px;
-  overflow-y: auto;
-  padding-right: 4px;
+.note-list-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
-.note-item {
-  position: relative;
-  padding: 0 0 16px 18px;
-  border-left: 1.5px solid var(--border);
+.note-card {
+  padding: 22px 24px;
 }
-.note-item:last-child {
-  padding-bottom: 4px;
-  border-left-color: transparent;
-}
-.note-item::before {
-  content: '';
-  position: absolute;
-  left: -4.5px;
-  top: 2px;
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--surface);
-  border: 1.5px solid var(--border);
-}
-.note-date {
+.note-card-date {
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
   color: var(--text-muted);
-  margin-bottom: 4px;
+  margin-bottom: 8px;
 }
-.note-body {
-  font-size: 14px;
-  line-height: 1.55;
+.note-card-body {
+  font-size: 15px;
+  line-height: 1.6;
   color: var(--text);
   white-space: pre-wrap;
   word-break: break-word;
