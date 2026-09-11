@@ -336,10 +336,10 @@ export async function listCompletions(req, query) {
   const days = Math.min(parseInt((query && query.days) || '30', 10), 365);
   const from = addDays(isoDate(), -(days - 1));
   const rows = await db.all(
-    'SELECT task_id, date FROM completions WHERE user_id = ? AND date >= ? ORDER BY date',
+    'SELECT task_id, date, skipped FROM completions WHERE user_id = ? AND date >= ? ORDER BY date',
     [auth.user.id, from]
   );
-  return ok(rows);
+  return ok(rows.map((r) => ({ task_id: r.task_id, date: r.date, skipped: !!r.skipped })));
 }
 
 export async function addCompletion(req) {
@@ -350,17 +350,47 @@ export async function addCompletion(req) {
   const task = await db.get('SELECT * FROM tasks WHERE id = ? AND user_id = ?', [taskId, auth.user.id]);
   if (!task) return json(404, { error: 'Task not found' });
   await db.run(
-    `INSERT INTO completions (task_id, user_id, date, task_title, task_color)
-     VALUES (?, ?, ?, ?, ?)
+    `INSERT INTO completions (task_id, user_id, date, task_title, task_color, skipped)
+     VALUES (?, ?, ?, ?, ?, 0)
      ON CONFLICT(task_id, date) DO UPDATE SET
        task_title = excluded.task_title,
-       task_color = excluded.task_color`,
+       task_color = excluded.task_color,
+       skipped = 0`,
     [taskId, auth.user.id, d, task.title, task.color]
   );
   return json(201, { taskId, date: d });
 }
 
 export async function removeCompletion(req, taskId, date) {
+  const auth = verifyAuth(req);
+  if (auth.error) return json(401, { error: auth.error });
+  await db.run('DELETE FROM completions WHERE task_id = ? AND user_id = ? AND date = ?', [taskId, auth.user.id, date]);
+  return ok({ ok: true });
+}
+
+// ---------------------------------------------------------------------------
+// Skips (dismiss a task for a day without breaking streaks)
+// ---------------------------------------------------------------------------
+export async function addSkip(req) {
+  const auth = verifyAuth(req);
+  if (auth.error) return json(401, { error: auth.error });
+  const { taskId, date } = req.body || {};
+  const d = date || isoDate();
+  const task = await db.get('SELECT * FROM tasks WHERE id = ? AND user_id = ?', [taskId, auth.user.id]);
+  if (!task) return json(404, { error: 'Task not found' });
+  await db.run(
+    `INSERT INTO completions (task_id, user_id, date, task_title, task_color, skipped)
+     VALUES (?, ?, ?, ?, ?, 1)
+     ON CONFLICT(task_id, date) DO UPDATE SET
+       task_title = excluded.task_title,
+       task_color = excluded.task_color,
+       skipped = 1`,
+    [taskId, auth.user.id, d, task.title, task.color]
+  );
+  return json(201, { taskId, date: d });
+}
+
+export async function removeSkip(req, taskId, date) {
   const auth = verifyAuth(req);
   if (auth.error) return json(401, { error: auth.error });
   await db.run('DELETE FROM completions WHERE task_id = ? AND user_id = ? AND date = ?', [taskId, auth.user.id, date]);
@@ -375,7 +405,7 @@ export async function getHistory(req, query) {
   if (auth.error) return json(401, { error: auth.error });
   const days = query && query.days && !Number.isNaN(parseInt(query.days, 10)) ? parseInt(query.days, 10) : 0;
 
-  let sql = 'SELECT id, task_id, date, task_title, task_color, created_at FROM completions WHERE user_id = ?';
+  let sql = 'SELECT id, task_id, date, task_title, task_color, skipped, created_at FROM completions WHERE user_id = ?';
   const params = [auth.user.id];
   if (days > 0) {
     sql += ' AND date >= ?';
@@ -402,6 +432,7 @@ export async function getHistory(req, query) {
       taskId: r.task_id,
       date: r.date,
       createdAt: r.created_at,
+      skipped: !!r.skipped,
       title: (current && current.title) || r.task_title || null,
       color: (current && current.color) || r.task_color || null,
     };
@@ -474,24 +505,38 @@ async function userStats(userId) {
       )
       .map((t) => t.id);
 
-  const comps = await db.all(
-    'SELECT task_id, date, task_title, task_color FROM completions WHERE user_id = ?',
+  const rows = await db.all(
+    'SELECT task_id, date, task_title, task_color, skipped FROM completions WHERE user_id = ?',
     [userId]
   );
+  // Partition so a skipped day still counts as "handled" for streaks/days,
+  // while raw completion counters (totals, per-task, weekday) ignore skips.
+  const comps = [];
+  const byDate = {};
+  const skipByDate = {};
   const compsByTask = new Map();
-  for (const c of comps) {
-    if (!compsByTask.has(c.task_id)) compsByTask.set(c.task_id, new Set());
-    compsByTask.get(c.task_id).add(c.date);
+  for (const c of rows) {
+    if (c.skipped) {
+      (skipByDate[c.date] = skipByDate[c.date] || new Set()).add(c.task_id);
+    } else {
+      comps.push(c);
+      (byDate[c.date] = byDate[c.date] || []).push(c.task_id);
+      if (!compsByTask.has(c.task_id)) compsByTask.set(c.task_id, new Set());
+      compsByTask.get(c.task_id).add(c.date);
+    }
   }
 
   const dueToday = dueOn(today);
-  const byDate = {};
-  for (const c of comps) (byDate[c.date] = byDate[c.date] || []).push(c.task_id);
 
   const daily = [];
-  for (const [date, ids] of Object.entries(byDate)) {
+  const handledDates = new Set([...Object.keys(byDate), ...Object.keys(skipByDate)]);
+  for (const date of handledDates) {
     const due = dueOn(date);
-    if (due.length && due.every((id) => ids.includes(id))) daily.push(date);
+    if (!due.length) continue;
+    const handled = new Set(byDate[date] || []);
+    const skipped = skipByDate[date];
+    if (skipped) for (const id of skipped) handled.add(id);
+    if (due.every((id) => handled.has(id))) daily.push(date);
   }
 
   const streaks = computeStreaks(daily.map((date) => ({ date })), today);
@@ -502,7 +547,10 @@ async function userStats(userId) {
   for (let i = 29; i >= 0; i--) {
     const d = addDays(today, -i);
     const due = dueOn(d);
-    const done = byDate[d] ? byDate[d].filter((id) => due.includes(id)).length : 0;
+    const handled = new Set(byDate[d] || []);
+    const skipped = skipByDate[d];
+    if (skipped) for (const id of skipped) handled.add(id);
+    const done = due.filter((id) => handled.has(id)).length;
     last30.push({ date: d, done, total: due.length });
     last30Completions += done;
     due30Count += due.length;
@@ -537,7 +585,10 @@ async function userStats(userId) {
       const date = addDays(start, d);
       const due = dueOn(date);
       total += due.length;
-      done += byDate[date] ? byDate[date].filter((id) => due.includes(id)).length : 0;
+      const handled = new Set(byDate[date] || []);
+      const skipped = skipByDate[date];
+      if (skipped) for (const id of skipped) handled.add(id);
+      done += due.filter((id) => handled.has(id)).length;
     }
     weekly.push({ start, done, total });
   }

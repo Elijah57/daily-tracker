@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS completions (
   date TEXT NOT NULL,
   task_title TEXT,
   task_color TEXT,
+  skipped INTEGER DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now')),
   UNIQUE(task_id, date)
 );
@@ -117,6 +118,7 @@ async function init(client) {
   };
   await addComp('task_title', 'task_title TEXT');
   await addComp('task_color', 'task_color TEXT');
+  await addComp('skipped', 'skipped INTEGER DEFAULT 0');
 
   // Backfill snapshots for rows created before the columns existed.
   await client.execute(

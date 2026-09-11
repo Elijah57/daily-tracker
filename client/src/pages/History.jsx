@@ -243,9 +243,10 @@ export default function History() {
                     <span className="h-count">{g.items.length}</span>
                   </div>
                   {g.items.map((ev) => (
-                    <div key={ev.id} className="h-item">
+                    <div key={ev.id} className={`h-item ${ev.skipped ? 'skipped' : ''}`}>
                       <span className="dot" style={{ background: ev.color || 'var(--surface-matte)' }} />
                       <span className="h-title">{ev.title || 'Completed task'}</span>
+                      {ev.skipped && <span className="skip-tag">skipped</span>}
                     </div>
                   ))}
                 </div>

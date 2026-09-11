@@ -12,6 +12,7 @@ export default function Dashboard() {
   const [goals, setGoals] = useState([]);
   const [stats, setStats] = useState(null);
   const [completions, setCompletions] = useState({});
+  const [skips, setSkips] = useState({});
   const [loading, setLoading] = useState(true);
   const [newTitle, setNewTitle] = useState('');
   const [newDesc, setNewDesc] = useState('');
@@ -36,8 +37,14 @@ export default function Dashboard() {
     setGoals(g);
     setStats(s);
     const map = {};
-    for (const row of c) map[`${row.task_id}:${row.date}`] = true;
+    const skipMap = {};
+    for (const row of c) {
+      const key = `${row.task_id}:${row.date}`;
+      if (row.skipped) skipMap[key] = true;
+      else map[key] = true;
+    }
     setCompletions(map);
+    setSkips(skipMap);
     const todays = n.find((x) => x.date === todayISO());
     setNote(todays?.body || '');
   }, []);
@@ -105,11 +112,32 @@ export default function Dashboard() {
     setTimeout(() => setNoteSaved(false), 2000);
   };
 
-  const removeTask = async (id) => {
-    await api(`/tasks/${id}`, { method: 'DELETE' });
-    setTasks((prev) => prev.filter((t) => t.id !== id));
-    const s = await api('/stats');
-    setStats(s);
+  const skipTask = async (task) => {
+    const date = todayISO();
+    setSkips((prev) => ({ ...prev, [`${task.id}:${date}`]: true }));
+    try {
+      await api('/skips', { method: 'POST', body: JSON.stringify({ taskId: task.id, date }) });
+      const s = await api('/stats');
+      setStats(s);
+    } catch {
+      await load();
+    }
+  };
+
+  const restoreTask = async (task) => {
+    const date = todayISO();
+    setSkips((prev) => {
+      const next = { ...prev };
+      delete next[`${task.id}:${date}`];
+      return next;
+    });
+    try {
+      await api(`/skips/${task.id}/${date}`, { method: 'DELETE' });
+      const s = await api('/stats');
+      setStats(s);
+    } catch {
+      await load();
+    }
   };
 
   const startEdit = (task) => {
@@ -138,7 +166,21 @@ export default function Dashboard() {
     }
   };
 
-  const doneToday = tasks.filter((t) => completions[`${t.id}:${todayISO()}`]).length;
+  const confirmDelete = async () => {
+    if (!confirm(`Delete "${editing.title}" permanently? This can't be undone.`)) return;
+    setSaving(true);
+    try {
+      await api(`/tasks/${editing.id}`, { method: 'DELETE' });
+      setEditing(null);
+      await refresh();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const skippedToday = tasks.filter((t) => skips[`${t.id}:${todayISO()}`]);
+  const visibleTasks = tasks.filter((t) => !skips[`${t.id}:${todayISO()}`]);
+  const doneToday = visibleTasks.filter((t) => completions[`${t.id}:${todayISO()}`]).length;
 
   if (loading) return <div className="loading">Loading…</div>;
 
@@ -167,12 +209,12 @@ export default function Dashboard() {
         <div className="stat">
           <div className="label">Today's progress</div>
           <div className="value">
-            {doneToday}/{tasks.length}
+            {doneToday}/{visibleTasks.length}
           </div>
           <div className="progress-wrap">
             <div
               className="progress-fill"
-              style={{ width: `${tasks.length ? (doneToday / tasks.length) * 100 : 0}%` }}
+              style={{ width: `${visibleTasks.length ? (doneToday / visibleTasks.length) * 100 : 0}%` }}
             />
           </div>
         </div>
@@ -187,12 +229,14 @@ export default function Dashboard() {
       <div className="grid grid-2">
         <div className="card">
           <div className="section-title">Today's tasks</div>
-          {tasks.length === 0 ? (
+          {visibleTasks.length === 0 && tasks.length === 0 ? (
             <div className="empty">
               No tasks due today. Add a daily habit below, or create a goal with recurring tasks.
             </div>
+          ) : visibleTasks.length === 0 ? (
+            <div className="empty">Everything skipped — nice. They'll be back tomorrow.</div>
           ) : (
-            tasks.map((task) => {
+            visibleTasks.map((task) => {
               const done = !!completions[`${task.id}:${todayISO()}`];
               return (
                 <div key={task.id} className={`task ${done ? 'done' : ''}`}>
@@ -221,12 +265,25 @@ export default function Dashboard() {
                     )}
                   </span>
                   <button className="edit" onClick={() => startEdit(task)} aria-label="Edit task">✎</button>
-                  <button className="del" onClick={() => removeTask(task.id)} aria-label="Delete task">
-                    ✕
-                  </button>
+                  <button className="del" onClick={() => skipTask(task)} aria-label="Skip task today">✕</button>
                 </div>
               );
             })
+          )}
+
+          {skippedToday.length > 0 && (
+            <div className="skipped-row">
+              <span className="skipped-label">Skipped today</span>
+              {skippedToday.map((t) => (
+                <span key={t.id} className="skipped-item">
+                  <span className="dot" style={{ background: t.color || 'var(--surface-matte)' }} />
+                  <span className="skipped-name">{t.title}</span>
+                  <button className="skipped-restore" onClick={() => restoreTask(t)} title="Keep it for today">
+                    ↺
+                  </button>
+                </span>
+              ))}
+            </div>
           )}
 
           <form className="add-row add-col" onSubmit={addTask}>
@@ -260,7 +317,7 @@ export default function Dashboard() {
 
         <div className="card">
           <div className="section-title">Weekly view</div>
-          <StreakCalendar completions={completions} tasks={tasks} />
+          <StreakCalendar completions={completions} skips={skips} tasks={tasks} />
           <div className="week-days">
             {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
               <span key={i}>{d}</span>
@@ -338,7 +395,8 @@ export default function Dashboard() {
                     ))}
                   </div>
                 </div>
-                <div className="modal-actions">
+                <div className="modal-actions split">
+                  <button type="button" className="btn btn-danger" onClick={confirmDelete}>Delete task</button>
                   <button type="button" className="btn btn-ghost" onClick={() => setEditing(null)}>Cancel</button>
                   <button className="btn" disabled={saving || !editForm.title.trim()}>
                     {saving ? 'Saving…' : 'Save'}
@@ -353,10 +411,12 @@ export default function Dashboard() {
   );
 }
 
-function StreakCalendar({ completions, tasks }) {
+function StreakCalendar({ completions, skips, tasks }) {
   const days = lastNDays(90);
   const today = todayISO();
-  const allDone = (date) => tasks.length > 0 && tasks.every((t) => completions[`${t.id}:${date}`]);
+  const allDone = (date) =>
+    tasks.length > 0 &&
+    tasks.every((t) => completions[`${t.id}:${date}`] || skips[`${t.id}:${date}`]);
 
   const months = [];
   let cursor = days[0].slice(0, 7);
